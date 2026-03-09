@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 # 1. Parámetros geométricos y del material
-Lx = 12.0        # Longitud en x (m)
-Ly = 3.0        # Longitud en y (m)
-h = 0.15        # Espesor de la losa (m)
+Lx = 6.0        # Longitud en x (m)
+Ly = 4.0        # Longitud en y (m)
+h = 0.16        # Espesor de la losa (m)
 E = 30e9        # Módulo de elasticidad del hormigón (Pa) -> 30 GPa
 nu = 0.2        # Coeficiente de Poisson
-q_load = 8000   # Carga transversal distribuida (N/m^2)
+q_load = 13200   # Carga transversal distribuida (N/m^2)
 
 # Rigidez a la flexión de la placa (D)
 D = (E * h**3) / (12 * (1 - nu**2))
@@ -101,27 +101,73 @@ for j in range(ny_in):
 flecha_max = np.max(W_2D)
 print(f"Resolución completa. Flecha máxima en el centro: {flecha_max * 1000:.2f} mm")
 
+# Creamos las coordenadas para la malla del gráfico
+x_vals = np.linspace(0, Lx, ny_in + 2)
+y_vals = np.linspace(0, Ly, nx_in + 2)
+X, Y = np.meshgrid(x_vals, y_vals)
+
 # ==========================================
-# 6. GRÁFICO 3D DE LA DEFORMADA
+# 6. CÁLCULO DE MOMENTOS FLECTORES
 # ==========================================
-# Creamos las coordenadas X e Y para el gráfico
-x_coord = np.linspace(0, Lx, Nx + 1)
-y_coord = np.linspace(0, Ly, Ny + 1)
-X, Y = np.meshgrid(x_coord, y_coord, indexing='ij')
+# Inicializamos matrices de ceros para las derivadas y los momentos
+# El tamaño es el mismo que la losa completa, así los bordes quedan en 0 automáticamente
+d2w_dx2 = np.zeros_like(W_2D)
+d2w_dy2 = np.zeros_like(W_2D)
+Mx = np.zeros_like(W_2D)
+My = np.zeros_like(W_2D)
 
-# Configuramos la figura
-fig = plt.figure(figsize=(10, 7))
-ax = fig.add_subplot(111, projection='3d')
+# Recorremos SOLO los nodos internos
+for j in range(1, ny_in + 1):      # Filas (eje Y)
+    for i in range(1, nx_in + 1):  # Columnas (eje X)
+        
+        # Derivada segunda respecto a X (variamos las columnas i)
+        d2w_dy2[i, j] = (W_2D[i, j+1] - 2*W_2D[i, j] + W_2D[i, j-1]) / delta**2
+        
+        # Derivada segunda respecto a Y (variamos las filas j)
+        d2w_dx2[i, j] = (W_2D[i+1, j] - 2*W_2D[i, j] + W_2D[i-1, j]) / delta**2
 
-# Invertimos el eje Z para que la deformación se vea hacia abajo (como en la realidad)
-surf = ax.plot_surface(X, Y, -W_2D*1000, cmap=cm.viridis, edgecolor='k', linewidth=0.5, alpha=0.9)
+# Aplicamos las ecuaciones de placa elástica
+Mx = -D * (d2w_dx2 + nu * d2w_dy2)
+My = -D * (d2w_dy2 + nu * d2w_dx2)
 
-# Etiquetas y formato
-ax.set_title('Deformada de Losa de Hormigón Simplemente Apoyada', fontsize=14)
-ax.set_box_aspect((Lx, Ly, 0.5))
+# Momento máximo para dimensionamiento
+Mx_max = np.max(Mx)
+My_max = np.max(My)
+print(f"Momento máximo Mx: {Mx_max:.2f} Nm/m")
+print(f"Momento máximo My: {My_max:.2f} Nm/m")
 
-# Agregamos una barra de colores
-fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='Desplazamiento (mm)')
+# ==========================================
+# 7. VISUALIZACIÓN DE CONTORNOS (ISOLÍNEAS)
+# ==========================================
+# Pasamos los momentos a kNm/m dividiendo por 1000 para mejor lectura
+Mx_kNm = Mx / 1000.0
+My_kNm = My / 1000.0
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+# Gráfico para Mx (Momento que pide armadura en dirección X)
+# Usamos contourf para rellenar de color entre las isolíneas
+contour1 = ax1.contourf(X, Y, Mx_kNm, levels=15, cmap='inferno')
+ax1.set_title('Momentos Flectores $M_x$ (kNm/m)', fontsize=13)
+ax1.set_xlabel('Eje X (m)')
+ax1.set_ylabel('Eje Y (m)')
+ax1.set_aspect('equal') # Mantener proporción de la losa en 2D
+fig.colorbar(contour1, ax=ax1, label='Momento (kNm/m)')
+
+# Gráfico para My (Momento que pide armadura en dirección Y)
+contour2 = ax2.contourf(X, Y, My_kNm, levels=15, cmap='inferno')
+ax2.set_title('Momentos Flectores $M_y$ (kNm/m)', fontsize=13)
+ax2.set_xlabel('Eje X (m)')
+ax2.set_ylabel('Eje Y (m)')
+ax2.set_aspect('equal')
+fig.colorbar(contour2, ax=ax2, label='Momento (kNm/m)')
+
+fig1 = plt.figure(figsize=(12, 8))
+ax = fig1.add_subplot(111, projection='3d')
+surf = ax.plot_surface(X, Y, -W_2D * 1000, cmap='plasma', edgecolor='k', linewidth=0.3, alpha=0.9)
+ax.set_title('Deformada de Losa de Hormigón Simplemente Apoyada', fontsize=14, pad=20)
+ax.set_box_aspect((Lx, Ly, 1.0))
+fig1.colorbar(surf, shrink=0.5, aspect=10, label='Deformación (mm)')
 
 plt.tight_layout()
 plt.show()
