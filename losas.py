@@ -49,10 +49,10 @@ for j in range(ny_in):
         # 2. Aplicamos la lógica de los nodos fantasmas para modificar el coeficiente central
         # Si estamos pegados a un borde (i=0, i=nx_in-1, j=0, j=ny_in-1), 
         # el nodo a distancia 2 cae afuera y se resta 1 al central.
-        if i == 0: coef_central -= 1.0          # Borde izquierdo
-        if i == nx_in - 1: coef_central -= 1.0  # Borde derecho
-        if j == 0: coef_central -= 1.0          # Borde inferior
-        if j == ny_in - 1: coef_central -= 1.0  # Borde superior
+        if i == 0: coef_central += 1.0          # Borde izquierdo empotrado
+        if i == nx_in - 1: coef_central += 1.0  # Borde derecho empotrado
+        if j == 0: coef_central += 1.0          # Borde inferior empotrado
+        if j == ny_in - 1: coef_central += 1.0  # Borde superior empotrado
         
         A[k, k] = coef_central * factor
         
