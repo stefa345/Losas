@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 # 1. Parámetros geométricos y del material
-Lx = 6.0        # Longitud en x (m)
-Ly = 4.0        # Longitud en y (m)
+Lx = 4.0        # Longitud en x (m)
+Ly = 6.0        # Longitud en y (m)
 h = 0.16        # Espesor de la losa (m)
 E = 30e9        # Módulo de elasticidad del hormigón (Pa) -> 30 GPa
 nu = 0.2        # Coeficiente de Poisson
@@ -49,10 +49,10 @@ for j in range(ny_in):
         # 2. Aplicamos la lógica de los nodos fantasmas para modificar el coeficiente central
         # Si estamos pegados a un borde (i=0, i=nx_in-1, j=0, j=ny_in-1), 
         # el nodo a distancia 2 cae afuera y se resta 1 al central.
-        if i == 0: coef_central += 1.0          # Borde izquierdo empotrado
-        if i == nx_in - 1: coef_central += 1.0  # Borde derecho empotrado
-        if j == 0: coef_central += 1.0          # Borde inferior empotrado
-        if j == ny_in - 1: coef_central += 1.0  # Borde superior empotrado
+        if i == 0: coef_central         += 1.0  # Borde izquierdo 
+        if i == nx_in - 1: coef_central += 1.0  # Borde derecho 
+        if j == 0: coef_central         -= 1.0  # Borde inferior 
+        if j == ny_in - 1: coef_central -= 1.0  # Borde superior 
         
         A[k, k] = coef_central * factor
         
@@ -113,18 +113,21 @@ X, Y = np.meshgrid(x_vals, y_vals)
 # El tamaño es el mismo que la losa completa, así los bordes quedan en 0 automáticamente
 d2w_dx2 = np.zeros_like(W_2D)
 d2w_dy2 = np.zeros_like(W_2D)
-Mx = np.zeros_like(W_2D)
-My = np.zeros_like(W_2D)
 
-# Recorremos SOLO los nodos internos
+# A. Curvatura en el interior de la losa
 for j in range(1, ny_in + 1):      # Filas (eje Y)
     for i in range(1, nx_in + 1):  # Columnas (eje X)
-        
-        # Derivada segunda respecto a X (variamos las columnas i)
         d2w_dy2[i, j] = (W_2D[i, j+1] - 2*W_2D[i, j] + W_2D[i, j-1]) / delta**2
-        
-        # Derivada segunda respecto a Y (variamos las filas j)
         d2w_dx2[i, j] = (W_2D[i+1, j] - 2*W_2D[i, j] + W_2D[i-1, j]) / delta**2
+
+# B. Curvatura en los bordes EMPOTRADOS (X=0 y X=Lx) para momentos negativos
+# En el borde Y, w=0 en todo lo largo, por lo que d2w_dy2 = 0. Solo calculamos d2w_dx2.
+for j in range(1, ny_in + 1):
+    # Borde izquierdo (i=0). El nodo fantasma w_{-1} es igual a w_{1} (que es W_2D[j, 1])
+    d2w_dx2[0, j] = (W_2D[1, j] - 0 + W_2D[1, j]) / delta**2
+    
+    # Borde derecho (i=nx_in+1). El nodo fantasma w_{N+1} es igual a w_{N} (que es W_2D[j, nx_in])
+    d2w_dx2[nx_in + 1, j] = (W_2D[nx_in, j] - 0 + W_2D[nx_in, j]) / delta**2
 
 # Aplicamos las ecuaciones de placa elástica
 Mx = -D * (d2w_dx2 + nu * d2w_dy2)
@@ -133,8 +136,8 @@ My = -D * (d2w_dy2 + nu * d2w_dx2)
 # Momento máximo para dimensionamiento
 Mx_max = np.max(Mx)
 My_max = np.max(My)
-print(f"Momento máximo Mx: {Mx_max:.2f} Nm/m")
-print(f"Momento máximo My: {My_max:.2f} Nm/m")
+print(f"Momento máximo Mx: {Mx_max:.4f} Nm/m")
+print(f"Momento máximo My: {My_max:.4f} Nm/m")
 
 # ==========================================
 # 7. VISUALIZACIÓN DE CONTORNOS (ISOLÍNEAS)
