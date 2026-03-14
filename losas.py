@@ -5,18 +5,18 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 # 1. Parámetros geométricos y del material
-Lx = 4.0        # Longitud en x (m)
-Ly = 6.0        # Longitud en y (m)
-h = 0.16        # Espesor de la losa (m)
-E = 30e9        # Módulo de elasticidad del hormigón (Pa) -> 30 GPa
+Lx = 3.0        # Longitud en x (m)
+Ly = 5.0        # Longitud en y (m)
+h = 0.10        # Espesor de la losa (m)
+E = 30.67e9        # Módulo de elasticidad del hormigón (Pa) -> 30 GPa
 nu = 0.2        # Coeficiente de Poisson
-q_load = 13200   # Carga transversal distribuida (N/m^2)
+q_load = 4000   # Carga transversal distribuida (N/m^2)
 
 # Rigidez a la flexión de la placa (D)
 D = (E * h**3) / (12 * (1 - nu**2))
 
 # 2. Discretización de la malla
-delta = 0.25    # Tamaño del paso de la malla dx = dy = delta (m)
+delta = 0.2    # Tamaño del paso de la malla dx = dy = delta (m)
 Nx = int(Lx / delta)
 Ny = int(Ly / delta)
 
@@ -49,9 +49,9 @@ for j in range(ny_in):
         # 2. Aplicamos la lógica de los nodos fantasmas para modificar el coeficiente central
         # Si estamos pegados a un borde (i=0, i=nx_in-1, j=0, j=ny_in-1), 
         # el nodo a distancia 2 cae afuera y se resta 1 al central.
-        if i == 0: coef_central         += 1.0  # Borde izquierdo 
-        if i == nx_in - 1: coef_central += 1.0  # Borde derecho 
-        if j == 0: coef_central         -= 1.0  # Borde inferior 
+        if i == 0: coef_central         -= 1.0  # Borde izquierdo 
+        if i == nx_in - 1: coef_central -= 1.0  # Borde derecho 
+        if j == 0: coef_central         += 1.0  # Borde inferior 
         if j == ny_in - 1: coef_central -= 1.0  # Borde superior 
         
         A[k, k] = coef_central * factor
@@ -90,21 +90,16 @@ w_1D = spla.spsolve(A, b)
 # 5. RECONSTRUCCIÓN DE LA MALLA 2D
 # ==========================================
 # Creamos una matriz llena de ceros que incluya los bordes
-W_2D = np.zeros((Nx + 1, Ny + 1))
+W_2D = np.zeros((Ny + 1, Nx + 1))
 
 # Llenamos el interior de la matriz con la solución que acabamos de hallar
 for j in range(ny_in):
     for i in range(nx_in):
-        W_2D[i+1, j+1] = w_1D[get_k(i, j)]
+        W_2D[j+1, i+1] = w_1D[get_k(i, j)]
 
 # Extraemos la deformación máxima (en el centro de la losa)
 flecha_max = np.max(W_2D)
-print(f"Resolución completa. Flecha máxima en el centro: {flecha_max * 1000:.2f} mm")
-
-# Creamos las coordenadas para la malla del gráfico
-x_vals = np.linspace(0, Lx, ny_in + 2)
-y_vals = np.linspace(0, Ly, nx_in + 2)
-X, Y = np.meshgrid(x_vals, y_vals)
+print(f"Resolución completa. Flecha máxima en el centro: {flecha_max * 1000:.4f} mm")
 
 # ==========================================
 # 6. CÁLCULO DE MOMENTOS FLECTORES
@@ -117,31 +112,37 @@ d2w_dy2 = np.zeros_like(W_2D)
 # A. Curvatura en el interior de la losa
 for j in range(1, ny_in + 1):      # Filas (eje Y)
     for i in range(1, nx_in + 1):  # Columnas (eje X)
-        d2w_dy2[i, j] = (W_2D[i, j+1] - 2*W_2D[i, j] + W_2D[i, j-1]) / delta**2
-        d2w_dx2[i, j] = (W_2D[i+1, j] - 2*W_2D[i, j] + W_2D[i-1, j]) / delta**2
+        d2w_dx2[j, i] = (W_2D[j, i+1] - 2*W_2D[j, i] + W_2D[j, i-1]) / delta**2
+        d2w_dy2[j, i] = (W_2D[j+1, i] - 2*W_2D[j, i] + W_2D[j-1, i]) / delta**2
 
 # B. Curvatura en los bordes EMPOTRADOS (X=0 y X=Lx) para momentos negativos
 # En el borde Y, w=0 en todo lo largo, por lo que d2w_dy2 = 0. Solo calculamos d2w_dx2.
 for j in range(1, ny_in + 1):
-    # Borde izquierdo (i=0). El nodo fantasma w_{-1} es igual a w_{1} (que es W_2D[j, 1])
-    d2w_dx2[0, j] = (W_2D[1, j] - 0 + W_2D[1, j]) / delta**2
+    # Borde izquierdo empotrado (x=0)
+    d2w_dx2[0, i] = (W_2D[1, i] - 0 + W_2D[1, i]) / delta**2
     
-    # Borde derecho (i=nx_in+1). El nodo fantasma w_{N+1} es igual a w_{N} (que es W_2D[j, nx_in])
-    d2w_dx2[nx_in + 1, j] = (W_2D[nx_in, j] - 0 + W_2D[nx_in, j]) / delta**2
-
 # Aplicamos las ecuaciones de placa elástica
 Mx = -D * (d2w_dx2 + nu * d2w_dy2)
 My = -D * (d2w_dy2 + nu * d2w_dx2)
 
 # Momento máximo para dimensionamiento
 Mx_max = np.max(Mx)
+Mx_min = np.min(Mx)
 My_max = np.max(My)
-print(f"Momento máximo Mx: {Mx_max:.4f} Nm/m")
-print(f"Momento máximo My: {My_max:.4f} Nm/m")
+My_min = np.min(My)
+print(f"Momento en el tramo Mx: {Mx_max:.4f} Nm/m")
+print(f"Momento en el apoyo Mx: {Mx_min:.4f} Nm/m")
+print(f"Momento en el tramo My: {My_max:.4f} Nm/m")
+print(f"Momento en el tramo My: {My_min:.4f} Nm/m")
 
 # ==========================================
 # 7. VISUALIZACIÓN DE CONTORNOS (ISOLÍNEAS)
 # ==========================================
+# Creamos las coordenadas para la malla del gráfico
+x_vals = np.linspace(0, Lx, nx_in + 2)
+y_vals = np.linspace(0, Ly, ny_in + 2)
+X, Y = np.meshgrid(x_vals, y_vals)
+
 # Pasamos los momentos a kNm/m dividiendo por 1000 para mejor lectura
 Mx_kNm = Mx / 1000.0
 My_kNm = My / 1000.0
