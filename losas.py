@@ -39,6 +39,11 @@ b = np.full(N_total, q_load / D)
 
 factor = 1.0 / (delta**4)
 
+izq = +1
+der = +1
+sup = +1
+inf = +1
+
 for j in range(ny_in):
     for i in range(nx_in):
         k = get_k(i, j)
@@ -49,11 +54,18 @@ for j in range(ny_in):
         # 2. Aplicamos la lógica de los nodos fantasmas para modificar el coeficiente central
         # Si estamos pegados a un borde (i=0, i=nx_in-1, j=0, j=ny_in-1), 
         # el nodo a distancia 2 cae afuera y se resta 1 al central.
-        if i == 0: coef_central         -= 1.0  # Borde izquierdo 
-        if i == nx_in - 1: coef_central -= 1.0  # Borde derecho 
-        if j == 0: coef_central         += 1.0  # Borde inferior 
-        if j == ny_in - 1: coef_central -= 1.0  # Borde superior 
-        
+        if i == 0 and izq == -1:coef_central            -= 1.0  # Borde izquierdo
+        elif i == 0 and izq == +1:coef_central          += 1.0  # Borde izquierdo
+
+        if i == nx_in - 1 and der == -1: coef_central   -= 1.0  # Borde derecho 
+        elif i == nx_in - 1 and der == +1: coef_central += 1.0  # Borde derecho 
+
+        if j == 0 and inf == -1: coef_central           -= 1.0  # Borde inferior 
+        elif j == 0 and inf == +1: coef_central         += 1.0  # Borde inferior 
+
+        if j == ny_in - 1 and sup == -1: coef_central   -= 1.0  # Borde superior 
+        elif j == ny_in - 1 and sup == +1: coef_central += 1.0  # Borde superior 
+
         A[k, k] = coef_central * factor
         
         # 3. Nodos adyacentes a distancia 1 (cruz: arriba, abajo, izq, der)
@@ -115,11 +127,23 @@ for j in range(1, ny_in + 1):      # Filas (eje Y)
         d2w_dx2[j, i] = (W_2D[j, i+1] - 2*W_2D[j, i] + W_2D[j, i-1]) / delta**2
         d2w_dy2[j, i] = (W_2D[j+1, i] - 2*W_2D[j, i] + W_2D[j-1, i]) / delta**2
 
-# B. Curvatura en los bordes EMPOTRADOS (X=0 y X=Lx) para momentos negativos
-# En el borde Y, w=0 en todo lo largo, por lo que d2w_dy2 = 0. Solo calculamos d2w_dx2.
-for j in range(1, ny_in + 1):
-    # Borde izquierdo empotrado (x=0)
-    d2w_dx2[0, i] = (W_2D[1, i] - 0 + W_2D[1, i]) / delta**2
+# B. Curvatura en los bordes EMPOTRADOS
+if sup == +1:
+    for i in range(1, nx_in + 1):
+        d2w_dy2[ny_in + 1, i] = (W_2D[ny_in, i] * 2) / delta**2
+
+if inf == +1:
+    for i in range(1, nx_in + 1):
+        d2w_dy2[0, i] = (W_2D[1, i] * 2)/ delta**2
+
+if izq == +1:
+    for j in range(1, ny_in + 1):
+        d2w_dx2[j, 0] = (W_2D[j, 1] * 2) / delta**2
+
+if der == +1:
+    for j in range(1, ny_in + 1):
+        d2w_dx2[j, nx_in + 1] = (W_2D[j, nx_in] * 2) / delta**2
+
     
 # Aplicamos las ecuaciones de placa elástica
 Mx = -D * (d2w_dx2 + nu * d2w_dy2)
