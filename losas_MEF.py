@@ -178,7 +178,7 @@ fig3 = plt.figure(figsize=(10, 7))
 ax3 = fig3.add_subplot(111, projection='3d')
 surf = ax3.plot_surface(X_nod, Y_nod, W_2D*1000, cmap='plasma', edgecolor='k', linewidth=0.1)
 ax3.set_title(f'Deformada MEF (Máx: {w_max_mm:.2f} mm)')
-ax3.set_box_aspect((Lx, Ly, 1.0))
+ax3.set_box_aspect((Lx, Ly, 0.5))
 fig3.colorbar(surf, label='Uz [mm]')
 
 plt.tight_layout()
