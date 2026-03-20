@@ -3,13 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ==========================================
-# 1. INICIALIZACIÓN Y PARÁMETROS
+# 1. PARÁMETROS Y CONFIGURACIÓN
 # ==========================================
 ops.wipe()
-# Modelo 3D con 6 Grados de Libertad por nodo
 ops.model('basic', '-ndm', 3, '-ndf', 6)
 
-# Parámetros sincronizados con losas_MDF.py
+# Geometría y Material
 Lx = 3.0        # Longitud en x (m)
 Ly = 5.0        # Longitud en y (m)
 h = 0.10        # Espesor de la losa (m)
@@ -17,24 +16,36 @@ E = 30.67e9     # Módulo de elasticidad (Pa)
 nu = 0.2        # Coeficiente de Poisson
 q_load = -4000  # Carga distribuida (N/m^2) hacia abajo (-Z)
 
-# Discretización (delta = 0.2m)
-Nx = 15         # Elementos en X (3.0 / 0.2)
-Ny = 25         # Elementos en Y (5.0 / 0.2)
-dx = Lx / Nx
-dy = Ly / Ny
+# Discretización
+Nx = 15         # Elementos en X
+Ny = 25         # Elementos en Y
+dx, dy = Lx/Nx, Ly/Ny
+
+# --- CONFIGURACIÓN DE APOYOS ---
+# Opciones: 'SIMPLE' (Solo Uz), 'FIJO' (Empotrado), 'LIBRE'
+apoyos = {
+    'izquierdo': 'FIJO', # x = 0
+    'derecho':   'FIJO', # x = Lx
+    'inferior':  'LIBRE', # y = 0
+    'superior':  'FIJO'  # y = Ly
+}
+
+# Definición de restricciones [Ux, Uy, Uz, Rx, Ry, Rz]
+patrones_bc = {
+    'SIMPLE': [0, 0, 1, 0, 0, 0],
+    'FIJO':   [1, 1, 1, 1, 1, 1],
+    'LIBRE':  [0, 0, 0, 0, 0, 0]
+}
 
 # ==========================================
 # 2. MATERIALES Y SECCIÓN
 # ==========================================
-matTag = 1
-secTag = 1
-# Material elástico isótropo
+matTag, secTag = 1, 1
 ops.nDMaterial('ElasticIsotropic', matTag, E, nu)
-# Sección de placa elástica (E, nu, h, rho)
 ops.section('ElasticMembranePlateSection', secTag, E, nu, h, 0.0)
 
 # ==========================================
-# 3. CREACIÓN DE MALLA (NODOS Y ELEMENTOS)
+# 3. CREACIÓN DE MALLA (NODOS Y BCs)
 # ==========================================
 node_tags = np.zeros((Ny + 1, Nx + 1), dtype=int)
 tag = 1
@@ -45,16 +56,26 @@ for j in range(Ny + 1):
         ops.node(tag, x, y, 0.0)
         node_tags[j, i] = tag
         
-        # CONDICIONES DE BORDE (Apoyo Simple)
-        if i == 0 or i == Nx or j == 0 or j == Ny:
-            # Fijamos Uz (grado 3)
-            # Fijamos Ux (1) y Uy (2) solo para estabilidad global (evitar movimiento rígido)
-            if i == 0 and j == 0:
-                ops.fix(tag, 1, 1, 1, 0, 0, 0) # Esquina fija
-            elif i == Nx and j == 0:
-                ops.fix(tag, 0, 1, 1, 0, 0, 0) # Estabiliza rotación
-            else:
-                ops.fix(tag, 0, 0, 1, 0, 0, 0) # Resto: solo apoyo vertical
+        # Lógica de Condiciones de Borde
+        # -----------------------------
+        res = [0] * 6
+        
+        # Identificar bordes y acumular restricciones
+        if i == 0:  res = [a | b for a, b in zip(res, patrones_bc[apoyos['izquierdo']])]
+        if i == Nx: res = [a | b for a, b in zip(res, patrones_bc[apoyos['derecho']])]
+        if j == 0:  res = [a | b for a, b in zip(res, patrones_bc[apoyos['inferior']])]
+        if j == Ny: res = [a | b for a, b in zip(res, patrones_bc[apoyos['superior']])]
+        
+        # Estabilidad Global (Evitar movimientos rígidos en el plano XY)
+        if i == 0 and j == 0:
+            res[0] = 1  # Fija Ux
+            res[1] = 1  # Fija Uy
+        elif i == Nx and j == 0:
+            res[1] = 1  # Fija Uy para evitar rotación global en Z
+            
+        if any(res):
+            ops.fix(tag, *res)
+            
         tag += 1
 
 ele_tag = 1
@@ -112,8 +133,9 @@ for e in range(1, Nx*Ny + 1):
     res = ops.eleResponse(e, 'stresses')
     # M11 (Flexión dir X - Índice 3, 11, 19, 27)
     # M22 (Flexión dir Y - Índice 4, 12, 20, 28)
-    m11 = (res[3] + res[11] + res[19] + res[27]) / 4.0
-    m22 = (res[4] + res[12] + res[20] + res[28]) / 4.0
+    # Se cambia el signo para que Positivo = Tracción abajo (Tramo)
+    m11 = -(res[3] + res[11] + res[19] + res[27]) / 4.0
+    m22 = -(res[4] + res[12] + res[20] + res[28]) / 4.0
     
     j_idx = (e-1) // Nx
     i_idx = (e-1) % Nx
@@ -122,14 +144,17 @@ for e in range(1, Nx*Ny + 1):
 
 # Estadísticas para comparación
 w_max_mm = np.max(np.abs(W_2D)) * 1000.0
-Mx_max_abs = np.max(np.abs(Mx_2D))
-My_max_abs = np.max(np.abs(My_2D))
+Mx_max = np.max(Mx_2D)
+Mx_min = np.min(Mx_2D)
+My_max = np.max(My_2D)
+My_min = np.min(My_2D)
 
 print("-" * 40)
-print("COMPARATIVA FINAL CON MDF:")
 print(f"-> Deflexión máx: {w_max_mm:.4f} mm")
-print(f"-> Momento Mx máx: {Mx_max_abs:.2f} Nm/m")
-print(f"-> Momento My máx: {My_max_abs:.2f} Nm/m")
+print(f"-> Momento en el tramo Mx: {Mx_max:.2f} Nm/m")
+print(f"-> Momento en el apoyo Mx: {Mx_min:.2f} Nm/m")
+print(f"-> Momento en el tramo My: {My_max:.2f} Nm/m")
+print(f"-> Momento en el apoyo My: {My_min:.2f} Nm/m")
 print("-" * 40)
 
 # ==========================================

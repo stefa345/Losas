@@ -16,8 +16,8 @@ q_load = 4000   # Carga transversal distribuida (N/m^2)
 D = (E * h**3) / (12 * (1 - nu**2))
 
 # Condiciones de Borde [-1]--> simplemente apoyado; [+1]--> empotrado
-izq = -1
-der = -1
+izq = +1
+der = +1
 sup = -1
 inf = -1
 
